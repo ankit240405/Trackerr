@@ -1,11 +1,9 @@
-<!DOCTYPE html>
+\<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/jpeg" href="/track.jpeg">
-
-    <title>Trackerr</title>
+    <title>Trackerr - Location Sharing</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet-color-markers/dist/leaflet-color-markers.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha512-h9FcoyWjHcOcmEVkxOfTLnmZFWIH0iZhZT1H2TbOq55xssQGEJHEaIm+PgoUaZbRvQTNTluNOEfb1ZRy6D3BOw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -222,12 +220,87 @@
         .dark-button:hover {
             background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
         }
+        
+        /* User list panel */
+        #userListPanel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(18, 18, 18, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            z-index: 1000;
+            max-width: 250px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: none;
+        }
+        
+        .user-list-title {
+            color: white;
+            font-weight: 600;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 8px;
+        }
+        
+        .user-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .user-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        
+        /* Toggle button for user list */
+        #toggleUserList {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(18, 18, 18, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        
+        /* Status indicator */
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-online {
+            background-color: #10B981;
+        }
+        
+        .status-offline {
+            background-color: #6B7280;
+        }
     </style>
 </head>
 <body class="bg-gray-900">
     <div id="map" class="w-full h-full absolute"></div>
 
     <div id="overlay" class="dark-gradient-bg w-full h-full absolute flex flex-col items-center justify-center z-50 overlay-enter">
+        <!-- Animated Map Background -->
         <div class="map-background" id="animatedMapBg"></div>
         
         <div class="dark-card rounded-2xl shadow-2xl p-8 w-11/12 max-w-md mx-4 relative z-10">
@@ -282,15 +355,34 @@
         </div>
     </div>
 
+    <!-- User list panel (initially hidden) -->
+    <div id="userListPanel">
+        <div class="user-list-title">Connected Users</div>
+        <div id="userList"></div>
+    </div>
+
+    <!-- Toggle button for user list -->
+    <div id="toggleUserList" title="Show connected users">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet-src.min.js"></script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <script>
         let map;
         let userMarker;
+        let socket;
+        let username;
+        let userMarkers = {}; // Store markers for all users
+        let userListOpen = false;
         
+        // Create animated map background
         function createAnimatedMapBackground() {
             const container = document.getElementById('animatedMapBg');
             
+            // Create grid lines
             for (let i = 0; i < 20; i++) {
                 const horizontalLine = document.createElement('div');
                 horizontalLine.className = 'map-line horizontal';
@@ -305,6 +397,7 @@
                 container.appendChild(verticalLine);
             }
             
+            // Create nodes
             for (let i = 0; i < 15; i++) {
                 const node = document.createElement('div');
                 node.className = 'map-node';
@@ -314,6 +407,7 @@
                 container.appendChild(node);
             }
             
+            // Create roads
             for (let i = 0; i < 8; i++) {
                 const roadH = document.createElement('div');
                 roadH.className = 'road road-horizontal';
@@ -330,10 +424,12 @@
                 container.appendChild(roadV);
             }
             
+            // Create moving marker
             const marker = document.createElement('div');
             marker.className = 'moving-marker';
             container.appendChild(marker);
             
+            // Create pulse dots
             for (let i = 0; i < 5; i++) {
                 const pulseDot = document.createElement('div');
                 pulseDot.className = 'pulse-dot';
@@ -344,9 +440,11 @@
             }
         }
         
+        // Enhanced startTracking function with smooth transition
         function startTracking() {
-            const username = document.getElementById('username').value.trim();
+            username = document.getElementById('username').value.trim();
             if (!username) {
+                // Add shake animation to input if empty
                 const input = document.getElementById('username');
                 input.classList.add('border-red-500');
                 input.placeholder = "Please enter your name first!";
@@ -356,6 +454,7 @@
                 return;
             }
             
+            // Show loading state
             const startBtn = document.getElementById('startBtn');
             const loadingIcon = document.getElementById('loadingIcon');
             const locationAccess = document.getElementById('locationAccess');
@@ -363,25 +462,37 @@
             loadingIcon.classList.remove('hidden');
             locationAccess.style.display = 'block';
             
+            // Get user's actual location
             if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition(
                     function(position) {
+                        // Successfully got location
                         initMap(position.coords.latitude, position.coords.longitude);
                         
+                        // Connect to Socket.io server
+                        connectToServer(position.coords.latitude, position.coords.longitude);
+                        
+                        // Animate overlay exit after getting location
                         const overlay = document.getElementById('overlay');
                         overlay.classList.remove('overlay-enter');
                         overlay.classList.add('overlay-exit');
                         
+                        // Show map with fade in
                         setTimeout(() => {
                             const mapElement = document.getElementById('map');
                             mapElement.style.opacity = "1";
                             
+                            // Show user list toggle button
+                            document.getElementById('toggleUserList').style.display = 'flex';
+                            
+                            // Remove overlay from DOM after transition completes
                             setTimeout(() => {
                                 overlay.style.display = 'none';
                             }, 800);
                         }, 500);
                     },
                     function(error) {
+                        // Error getting location
                         console.error("Error getting location:", error);
                         locationAccess.innerHTML = `
                             <p class="text-red-400">
@@ -401,41 +512,248 @@
                     }
                 );
             } else {
+                // Geolocation not supported
                 locationAccess.innerHTML = '<p class="text-red-400">Geolocation is not supported by your browser.</p>';
                 startBtn.disabled = false;
                 loadingIcon.classList.add('hidden');
             }
         }
         
+        // Initialize map with user's actual location
         function initMap(lat, lng) {
+            // Create map centered on user's location
             map = L.map('map').setView([lat, lng], 15);
             
+            // Add dark tile layer
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution:"By-Ankit Sharma",
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
                 subdomains: 'abcd',
                 maxZoom: 20
             }).addTo(map);
             
-            userMarker = L.marker([lat, lng]).addTo(map)
-                .bindPopup('Your location')
+            // Add marker for user's location with custom icon
+            const userIcon = L.divIcon({
+                className: 'user-marker',
+                html: `<div style="background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);"></div>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10]
+            });
+            
+            userMarker = L.marker([lat, lng], {icon: userIcon}).addTo(map)
+                .bindPopup(`<b>You</b><br>${username}`)
                 .openPopup();
             
+            // Add circle to indicate accuracy
             L.circle([lat, lng], {
                 color: '#3b82f6',
                 fillColor: '#3b82f6',
                 fillOpacity: 0.2,
                 radius: 50
             }).addTo(map);
-            
-            
         }
         
+        // Connect to Socket.io server and handle user events
+        function connectToServer(lat, lng) {
+            // Connect to server (in a real app, you would use your server URL)
+            socket = io('https://your-socketio-server.com', {
+                transports: ['websocket']
+            });
+            
+            // For demo purposes, we'll simulate a connection
+            simulateMultiUserEnvironment(lat, lng);
+            
+            /* 
+            // Real implementation would look like this:
+            socket.on('connect', () => {
+                // Send user info to server
+                socket.emit('user_joined', {
+                    username: username,
+                    latitude: lat,
+                    longitude: lng
+                });
+                
+                // Start tracking position updates
+                navigator.geolocation.watchPosition((position) => {
+                    socket.emit('position_update', {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude
+                    });
+                });
+            });
+            
+            // Listen for other users' positions
+            socket.on('user_positions', (users) => {
+                updateUserMarkers(users);
+            });
+            
+            // Listen for new user connections
+            socket.on('user_joined', (user) => {
+                addUserMarker(user);
+                updateUserList();
+            });
+            
+            // Listen for user disconnections
+            socket.on('user_left', (userId) => {
+                removeUserMarker(userId);
+                updateUserList();
+            });
+            */
+        }
+        
+        // Update markers for all users
+        function updateUserMarkers(users) {
+            // Remove all existing user markers except our own
+            for (const userId in userMarkers) {
+                if (userId !== socket.id) {
+                    map.removeLayer(userMarkers[userId]);
+                    delete userMarkers[userId];
+                }
+            }
+            
+            // Add markers for all users
+            users.forEach(user => {
+                if (user.id !== socket.id) {
+                    addUserMarker(user);
+                }
+            });
+            
+            updateUserList();
+        }
+        
+        // Add a marker for a specific user
+        function addUserMarker(user) {
+            // Generate a consistent color based on user ID
+            const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#0ea5e9', '#6366f1', '#a855f7', '#ec4899'];
+            const colorIndex = Math.abs(hashCode(user.id)) % colors.length;
+            const userColor = colors[colorIndex];
+            
+            // Create custom icon with user's color
+            const userIcon = L.divIcon({
+                className: 'other-user-marker',
+                html: `<div style="background-color: ${userColor}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px ${userColor}80;"></div>`,
+                iconSize: [18, 18],
+                iconAnchor: [9, 9]
+            });
+            
+            // Add marker to map
+            const marker = L.marker([user.latitude, user.longitude], {icon: userIcon})
+                .addTo(map)
+                .bindPopup(`<b>${user.username}</b>`);
+            
+            // Store reference to marker
+            userMarkers[user.id] = marker;
+        }
+        
+        // Remove a user marker
+        function removeUserMarker(userId) {
+            if (userMarkers[userId]) {
+                map.removeLayer(userMarkers[userId]);
+                delete userMarkers[userId];
+            }
+        }
+        
+        // Update the user list panel
+        function updateUserList() {
+            const userList = document.getElementById('userList');
+            userList.innerHTML = '';
+            
+            // Add current user first
+            const currentUserItem = document.createElement('div');
+            currentUserItem.className = 'user-item';
+            currentUserItem.innerHTML = `
+                <span class="status-indicator status-online"></span>
+                <span class="user-color" style="background-color: #3b82f6;"></span>
+                <span>You (${username})</span>
+            `;
+            userList.appendChild(currentUserItem);
+            
+            // Add other users (in a real app, you would get this from the server)
+            const demoUsers = [
+                {id: 'user2', username: 'Alex', color: '#ef4444'},
+                {id: 'user3', username: 'Sam', color: '#22c55e'},
+                {id: 'user4', username: 'Jordan', color: '#6366f1'}
+            ];
+            
+            demoUsers.forEach(user => {
+                const userItem = document.createElement('div');
+                userItem.className = 'user-item';
+                userItem.innerHTML = `
+                    <span class="status-indicator status-online"></span>
+                    <span class="user-color" style="background-color: ${user.color};"></span>
+                    <span>${user.username}</span>
+                `;
+                userList.appendChild(userItem);
+            });
+        }
+        
+        // Toggle user list visibility
+        function toggleUserList() {
+            const userListPanel = document.getElementById('userListPanel');
+            userListOpen = !userListOpen;
+            
+            if (userListOpen) {
+                userListPanel.style.display = 'block';
+                updateUserList();
+            } else {
+                userListPanel.style.display = 'none';
+            }
+        }
+        
+        // Helper function to generate a hash code
+        function hashCode(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                hash |= 0; // Convert to 32bit integer
+            }
+            return hash;
+        }
+        
+        // Simulate a multi-user environment for demo purposes
+        function simulateMultiUserEnvironment(lat, lng) {
+            // Add some demo users after a delay
+            setTimeout(() => {
+                const demoUsers = [
+                    {id: 'user2', username: 'Alex', latitude: lat + 0.002, longitude: lng + 0.001},
+                    {id: 'user3', username: 'Sam', latitude: lat - 0.001, longitude: lng + 0.002},
+                    {id: 'user4', username: 'Jordan', latitude: lat + 0.0015, longitude: lng - 0.002}
+                ];
+                
+                demoUsers.forEach(user => {
+                    addUserMarker(user);
+                });
+                
+                updateUserList();
+                
+                // Simulate movement of demo users
+                setInterval(() => {
+                    demoUsers.forEach(user => {
+                        if (userMarkers[user.id]) {
+                            // Move slightly for demo effect
+                            const newLat = user.latitude + (Math.random() * 0.0004 - 0.0002);
+                            const newLng = user.longitude + (Math.random() * 0.0004 - 0.0002);
+                            
+                            user.latitude = newLat;
+                            user.longitude = newLng;
+                            
+                            userMarkers[user.id].setLatLng([newLat, newLng]);
+                        }
+                    });
+                }, 3000);
+            }, 2000);
+        }
+        
+        // Allow submitting with Enter key
         document.getElementById('username').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 startTracking();
             }
         });
         
+        // Toggle user list when button is clicked
+        document.getElementById('toggleUserList').addEventListener('click', toggleUserList);
+        
+        // Focus on input when page loads
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('username').focus();
             createAnimatedMapBackground();
